@@ -141,14 +141,15 @@ void rst::rasterizer::draw(rst::pos_buf_id pos_buffer, rst::ind_buf_id ind_buffe
     auto& buf = pos_buf[pos_buffer.pos_id];
     auto& ind = ind_buf[ind_buffer.ind_id];
 
-    float f1 = (100 - 0.1) / 2.0;
-    float f2 = (100 + 0.1) / 2.0;
+    float f1 = (100 - 0.1) / 2.0; //f1 = (far - near) / 2.0;
+    float f2 = (100 + 0.1) / 2.0; //f2 = (far + near) / 2.0;
 
     Eigen::Matrix4f mvp = projection * view * model;
     for (auto& i : ind)
     {
         Triangle t;
 
+        //mvp 归一化
         Eigen::Vector4f v[] = {
                 mvp * to_vec4(buf[i[0]], 1.0f),
                 mvp * to_vec4(buf[i[1]], 1.0f),
@@ -159,6 +160,7 @@ void rst::rasterizer::draw(rst::pos_buf_id pos_buffer, rst::ind_buf_id ind_buffe
             vec /= vec.w();
         }
 
+        //NDC 转化为屏幕坐标
         for (auto & vert : v)
         {
             vert.x() = 0.5*width*(vert.x()+1.0);
@@ -166,10 +168,9 @@ void rst::rasterizer::draw(rst::pos_buf_id pos_buffer, rst::ind_buf_id ind_buffe
             vert.z() = vert.z() * f1 + f2;
         }
 
+        // 设置颜色
         for (int i = 0; i < 3; ++i)
         {
-            t.setVertex(i, v[i].head<3>());
-            t.setVertex(i, v[i].head<3>());
             t.setVertex(i, v[i].head<3>());
         }
 
@@ -223,7 +224,7 @@ rst::rasterizer::rasterizer(int w, int h) : width(w), height(h)
 
 int rst::rasterizer::get_index(int x, int y)
 {
-    return (height-y)*width + x;
+    return (height-1-y)*width + x;
 }
 
 void rst::rasterizer::set_pixel(const Eigen::Vector3f& point, const Eigen::Vector3f& color)
