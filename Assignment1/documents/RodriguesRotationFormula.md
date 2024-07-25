@@ -20,7 +20,8 @@
 
 <img src="RodriguesRotationFormula.assets/image-20240725175607043.png" alt="image-20240725175607043" style="zoom:67%;" />
 
- $\vec{v'_{projV}}=\cos{\theta}\vec{v}$ 	 $\vec{v'_{projnxv}}=\sin{\theta}({\hat{n}\times\vec{v}})$
+ $\vec{v'_{projV}}=\cos{\theta}\vec{v}$, $\vec{v'_{projnxv}}=\sin{\theta}({\hat{n}\times\vec{v}})$
+
 $$
 投影向量计算过程\\
 projV长度:||v'||*\cos{\theta} \\
@@ -28,7 +29,6 @@ projV方向:\hat{v}=\frac{\vec{v}}{||\vec{v}||}\\
 \vec{v'_{projV}} = ||v'||*\cos{\theta}\frac{\vec{v}}{||\vec{v}||}=\cos{\theta}\vec{v}\\
 同理\vec{v'_{projnxv}}=\sin{\theta}({\hat{n}\times\vec{v}})
 $$
-
 
 最后得解 $\vec{v'} = \vec{v'_{projV}} +\vec{v'_{projnxv}}=\cos{\theta}\vec{v}+\sin{\theta}({\hat{n}\times\vec{v}})$
 
@@ -91,4 +91,3 @@ $$
 a_3 & 0 & -a_1 \\
 -a_2 & a_1 & 0
 \end{array} \right]b$
-
