@@ -96,9 +96,9 @@
 
 课程中提到摄像机朝向z的负方向看去,所以near和far都应该是负的且 near>far
 
-因此修改main函数中near和far的值改为负数
+因此修改main函数中near和far的值改为负数`r.set_projection(get_projection_matrix(45, 1, -0.1, -50)); ` 
 
-`r.set_projection(get_projection_matrix(45, 1, -0.1, -50));`
+作业1修改这里为了和课程推导出的能对应上,但这不是可以随意修改的,有需要考虑的东西,在作业2笔记中提及;
 
 ## 额外内容1
 

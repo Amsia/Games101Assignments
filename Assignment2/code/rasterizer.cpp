@@ -8,6 +8,7 @@
 #include "rasterizer.hpp"
 #include <opencv2/opencv.hpp>
 #include <math.h>
+#include "global.hpp"
 
 
 rst::pos_buf_id rst::rasterizer::load_positions(const std::vector<Eigen::Vector3f> &positions)
@@ -40,9 +41,21 @@ auto to_vec4(const Eigen::Vector3f& v3, float w = 1.0f)
 }
 
 
-static bool insideTriangle(int x, int y, const Vector3f* _v)
+static bool insideTriangle(float x, float y, const Vector3f* _v)
 {   
     // TODO : Implement this function to check if the point (x, y) is inside the triangle represented by _v[0], _v[1], _v[2]
+    // 消去z差异,转到一个面上
+    Vector3f v[3];
+    for(int i=0;i<3;i++)
+        v[i] = {_v[i].x(), _v[i].y(), 0};
+    Vector3f p = {x, y, 0};
+
+    Vector3f a = (v[1] - v[0]).cross(p - v[0]);
+    Vector3f b = (v[2] - v[1]).cross(p - v[1]);
+    Vector3f c = (v[0] - v[2]).cross(p - v[2]);
+
+    // abc同侧则在三角形内
+    return (a.dot(b) >= 0) && (a.dot(c) >= 0) && (b.dot(a) >= 0);
 }
 
 static std::tuple<float, float, float> computeBarycentric2D(float x, float y, const Vector3f* v)
@@ -59,8 +72,13 @@ void rst::rasterizer::draw(pos_buf_id pos_buffer, ind_buf_id ind_buffer, col_buf
     auto& ind = ind_buf[ind_buffer.ind_id];
     auto& col = col_buf[col_buffer.col_id];
 
-    float f1 = (50 - 0.1) / 2.0;
-    float f2 = (50 + 0.1) / 2.0;
+    #ifdef RH
+        float f1 = (-0.1 - (-50)) / 2.0; // 透视投影矩阵右手坐标系
+        float f2 = (-0.1 + (-50)) / 2.0;
+    #else
+        float f1 = (50 - 0.1) / 2.0;
+        float f2 = (50 + 0.1) / 2.0;
+    #endif
 
     Eigen::Matrix4f mvp = projection * view * model;
     for (auto& i : ind)
@@ -80,13 +98,12 @@ void rst::rasterizer::draw(pos_buf_id pos_buffer, ind_buf_id ind_buffer, col_buf
         {
             vert.x() = 0.5*width*(vert.x()+1.0);
             vert.y() = 0.5*height*(vert.y()+1.0);
+            // 扩展z[-1,1]到[n,f] 0.5*(z+1)(fabs(n-f))+n = z(fabs(n-f))/2+(f+n)/2
             vert.z() = vert.z() * f1 + f2;
         }
 
         for (int i = 0; i < 3; ++i)
         {
-            t.setVertex(i, v[i].head<3>());
-            t.setVertex(i, v[i].head<3>());
             t.setVertex(i, v[i].head<3>());
         }
 
@@ -116,6 +133,89 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t) {
     //z_interpolated *= w_reciprocal;
 
     // TODO : set the current pixel (use the set_pixel function) to the color of the triangle (use getColor function) if it should be painted.
+    float minX = std::floor(std::min(std::min(v[0].x(), v[1].x()),v[2].x()));
+    float minY = std::floor(std::min(std::min(v[0].y(), v[1].y()),v[2].y()));
+    float maxX = std::ceil(std::max(std::max(v[0].x(), v[1].x()),v[2].x()));
+    float maxY = std::ceil(std::max(std::max(v[0].y(), v[1].y()),v[2].y()));
+
+    // 遍历像素
+//     for (int x = minX; x < maxX; x++)
+//     {
+//         for (int y = minY; y < maxY; y++)
+//         {
+//             if(insideTriangle(x+0.5, y+0.5, t.v))
+//             {
+//                 // 计算重心坐标然后插值深度值
+//                 auto[alpha, beta, gamma] = computeBarycentric2D(x, y, t.v);
+//                 float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+//                 float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+//                 z_interpolated *= w_reciprocal;
+
+//                 int ind = get_index(x, y);
+// #ifdef RH
+//                 if (z_interpolated > depth_buf[ind]) // 透视投影矩阵右手坐标系
+// #else 
+//                 if (z_interpolated < depth_buf[ind])
+// #endif
+//                 {
+//                     depth_buf[ind] = z_interpolated;
+//                     set_pixel(Eigen::Vector3f(x, y, z_interpolated), t.getColor());
+//                 }
+//             }
+//         }
+//     }
+
+    // SSAA
+    // 遍历像素
+    float ssaa_step = 1.0 / (ssaa * 2);
+    for (int i = minX; i < maxX; i++)
+    {
+        for (int j = minY; j < maxY; j++)
+        {
+            int sample_ind = 0, sample_cnt = 0;
+            int ind = get_index(i, j);
+            // 像素点分为ssaa*ssaa,遍历采样
+            for (float x = i + ssaa_step; x < i + 1; x += ssaa_step*2)
+            {
+                for (float y = j + ssaa_step; y < j + 1; y += ssaa_step*2)
+                {
+                    if (insideTriangle(x, y, t.v))
+                    {
+                        // 计算重心坐标然后插值深度值
+                        auto[alpha, beta, gamma] = computeBarycentric2D(x, y, t.v);
+                        float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                        float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                        z_interpolated *= w_reciprocal;
+                        int ssaa_ind = ind * ssaa2 + sample_ind;
+#ifdef RH
+                        if (z_interpolated > ssaa_depth_buf[ssaa_ind]) // 透视投影矩阵右手坐标系
+#else 
+                        if (z_interpolated < ssaa_depth_buf[ssaa_ind])
+#endif
+                        {
+                            ssaa_depth_buf[ssaa_ind] = z_interpolated;
+                            ssaa_frame_buf[ssaa_ind] = t.getColor();
+                            sample_cnt++;
+                        }
+                    }
+                    
+                    sample_ind++;
+                }
+            }
+
+            // 覆盖像素点个数
+            if (sample_cnt != 0)
+            {
+                Eigen::Vector3f color = {0, 0, 0};
+                for (int i = 0; i < ssaa2; i++)
+                {
+                    color += ssaa_frame_buf[ind*ssaa2+i];
+                }
+                color /= ssaa2;
+                set_pixel(Vector3f(i, j, 1.0f), color);
+            }            
+        }
+    }
 }
 
 void rst::rasterizer::set_model(const Eigen::Matrix4f& m)
@@ -138,10 +238,17 @@ void rst::rasterizer::clear(rst::Buffers buff)
     if ((buff & rst::Buffers::Color) == rst::Buffers::Color)
     {
         std::fill(frame_buf.begin(), frame_buf.end(), Eigen::Vector3f{0, 0, 0});
+        std::fill(ssaa_frame_buf.begin(), ssaa_frame_buf.end(), Eigen::Vector3f{0, 0, 0});
     }
     if ((buff & rst::Buffers::Depth) == rst::Buffers::Depth)
     {
+#ifdef RH
+        std::fill(depth_buf.begin(), depth_buf.end(), -std::numeric_limits<float>::infinity()); // 透视投影矩阵右手坐标系
+        std::fill(ssaa_depth_buf.begin(), ssaa_depth_buf.end(), -std::numeric_limits<float>::infinity()); // 透视投影矩阵右手坐标系
+#else 
         std::fill(depth_buf.begin(), depth_buf.end(), std::numeric_limits<float>::infinity());
+        std::fill(ssaa_depth_buf.begin(), ssaa_depth_buf.end(), std::numeric_limits<float>::infinity());
+#endif
     }
 }
 
@@ -149,6 +256,8 @@ rst::rasterizer::rasterizer(int w, int h) : width(w), height(h)
 {
     frame_buf.resize(w * h);
     depth_buf.resize(w * h);
+    ssaa_frame_buf.resize(w * h);
+    ssaa_depth_buf.resize(w * h);
 }
 
 int rst::rasterizer::get_index(int x, int y)
@@ -162,6 +271,14 @@ void rst::rasterizer::set_pixel(const Eigen::Vector3f& point, const Eigen::Vecto
     auto ind = (height-1-point.y())*width + point.x();
     frame_buf[ind] = color;
 
+}
+
+void rst::rasterizer::set_ssaa(int x)
+{
+    ssaa = x;
+    ssaa2 = ssaa * ssaa; 
+    ssaa_frame_buf.resize(width * height * ssaa2);
+    ssaa_depth_buf.resize(width * height * ssaa2);
 }
 
 // clang-format on
